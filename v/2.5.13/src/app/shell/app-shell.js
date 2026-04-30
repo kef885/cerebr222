@@ -1066,6 +1066,7 @@ async function onDomReady() {
         let hoverCloseTimer = 0;
         let hoverOpenTimer = 0;
         let webpageHoverOpenTimer = 0;
+        let webpageHoverCloseTimer = 0;
 
         const APPROACH_DISTANCE_PX = 28;
         const HOVER_OPEN_DELAY_MS = 140;
@@ -1131,6 +1132,12 @@ async function onDomReady() {
             webpageHoverOpenTimer = 0;
         };
 
+        const cancelWebpageHoverClose = () => {
+            if (!webpageHoverCloseTimer) return;
+            clearTimeout(webpageHoverCloseTimer);
+            webpageHoverCloseTimer = 0;
+        };
+
         const cancelAutoClose = () => {
             if (!hoverCloseTimer) return;
             clearTimeout(hoverCloseTimer);
@@ -1186,6 +1193,45 @@ async function onDomReady() {
             );
         };
 
+        const closeWebpageContentMenu = () => {
+            cancelWebpageHoverOpen();
+            cancelWebpageHoverClose();
+            clearWebpagePointerTrail();
+            webpageContentMenu?.classList?.remove('visible');
+        };
+
+        const isPointerInWebpageHoverRegion = (x = lastPointerX, y = lastPointerY) => {
+            if (!webpageQAContainer || !webpageContentMenu) return false;
+            if (webpageQAContainer.matches(':hover')) return true;
+            if (
+                webpageContentMenu.classList.contains('visible') &&
+                webpageContentMenu.matches(':hover')
+            ) {
+                return true;
+            }
+            if (Number.isFinite(x) && Number.isFinite(y)) {
+                if (isPointInRect(x, y, webpageQAContainer.getBoundingClientRect())) return true;
+                if (
+                    webpageContentMenu.classList.contains('visible') &&
+                    isPointInRect(x, y, webpageContentMenu.getBoundingClientRect())
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        const scheduleWebpageHoverClose = () => {
+            if (!webpageContentMenu?.classList?.contains('visible')) return;
+            if (webpageHoverCloseTimer) return;
+            webpageHoverCloseTimer = window.setTimeout(() => {
+                webpageHoverCloseTimer = 0;
+                if (!webpageContentMenu?.classList?.contains('visible')) return;
+                if (isPointerInWebpageHoverRegion(lastPointerX, lastPointerY)) return;
+                closeWebpageContentMenu();
+            }, AUTO_CLOSE_DELAY_MS);
+        };
+
         if (isExtensionEnvironment && webpageQAContainer && webpageContentMenu) {
             webpageQAContainer.addEventListener(
                 'pointerenter',
@@ -1204,6 +1250,7 @@ async function onDomReady() {
                         openWebpageContentMenu();
                         lastWebpageAutoOpenAt = performance.now();
                         clearWebpagePointerTrail();
+                        cancelWebpageHoverClose();
                     }, HOVER_OPEN_DELAY_MS);
                 },
                 { passive: true }
@@ -1213,7 +1260,32 @@ async function onDomReady() {
                 'pointerleave',
                 (event) => {
                     if (event.pointerType && event.pointerType !== 'mouse') return;
+                    lastPointerX = event.clientX;
+                    lastPointerY = event.clientY;
                     cancelWebpageHoverOpen();
+                    scheduleWebpageHoverClose();
+                },
+                { passive: true }
+            );
+
+            webpageContentMenu.addEventListener(
+                'pointerenter',
+                (event) => {
+                    if (event.pointerType && event.pointerType !== 'mouse') return;
+                    lastPointerX = event.clientX;
+                    lastPointerY = event.clientY;
+                    cancelWebpageHoverClose();
+                },
+                { passive: true }
+            );
+
+            webpageContentMenu.addEventListener(
+                'pointerleave',
+                (event) => {
+                    if (event.pointerType && event.pointerType !== 'mouse') return;
+                    lastPointerX = event.clientX;
+                    lastPointerY = event.clientY;
+                    scheduleWebpageHoverClose();
                 },
                 { passive: true }
             );
@@ -1261,6 +1333,14 @@ async function onDomReady() {
                 }
                 if (webpageHoverOpenTimer && webpageQAContainer && !webpageQAContainer.matches(':hover')) {
                     cancelWebpageHoverOpen();
+                }
+                if (
+                    webpageContentMenu?.classList?.contains('visible') &&
+                    isPointerInWebpageHoverRegion(event.clientX, event.clientY)
+                ) {
+                    cancelWebpageHoverClose();
+                } else if (webpageContentMenu?.classList?.contains('visible')) {
+                    scheduleWebpageHoverClose();
                 }
 
                 if (settingsMenu.classList.contains('visible')) {
